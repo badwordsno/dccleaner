@@ -1,0 +1,32 @@
+title: "디시클리너"
+description: "디시인사이드 갤로그의 게시글과 댓글을 정리하는 Android, Windows, macOS용 무료 오픈소스 프로그램"
+lang: "ko-KR"
+locale: "ko_KR"
+
+url: "https://dccleaner3.github.io"
+baseurl: "/dccleaner"
+
+repository: "dccleaner3/dccleaner"
+
+theme: jekyll-theme-primer
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+author:
+  name: "dccleaner3"
+  url: "https://github.com/dccleaner3"
+
+logo: "https://raw.githubusercontent.com/dccleaner3/dccleaner/main/app/src/main/ic_launcher-playstore.png"
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      image: "https://github.com/user-attachments/assets/87809359-858a-40b9-92fa-ac29fd758c52"
+
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock

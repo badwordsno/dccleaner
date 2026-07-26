@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -18,8 +19,13 @@ import androidx.core.view.WindowCompat
 import com.dccleaner.app.ui.screen.DcinsideScreen
 import com.dccleaner.app.ui.theme.DccleanerTheme
 import com.dccleaner.app.service.DcCleanerNotifier
+import com.dccleaner.app.storage.getSavedDarkTheme
+import com.dccleaner.app.storage.saveDarkTheme
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 
 class MainActivity : ComponentActivity() {
@@ -40,9 +46,10 @@ class MainActivity : ComponentActivity() {
         resumeTaskId = intent.getStringExtra(DcCleanerNotifier.EXTRA_RESUME_TASK_ID)
         enableEdgeToEdge()
 
-        // 상태바 아이콘을 어둡게 설정 (밝은 배경에서 보이도록)
-        WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars =
-            true
+        // The app manages saved accounts itself, so keep system autofill services
+        // (including Samsung Pass/Wallet) from offering to save the login form.
+        findViewById<View>(android.R.id.content).importantForAutofill =
+            View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
 
         // 알림 권한 요청 (Android 13+)
         requestNotificationPermission()
@@ -51,12 +58,27 @@ class MainActivity : ComponentActivity() {
         requestBatteryOptimizationExemption()
 
         setContent {
-            DccleanerTheme(darkTheme = false) {
+            val systemDarkTheme = isSystemInDarkTheme()
+            var darkTheme by remember {
+                mutableStateOf(getSavedDarkTheme(this, systemDarkTheme))
+            }
+
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars =
+                    !darkTheme
+            }
+
+            DccleanerTheme(darkTheme = darkTheme) {
                 DcinsideScreen(
                     resumeTaskId = resumeTaskId,
                     onResumeTaskConsumed = {
                         resumeTaskId = null
                         intent.removeExtra(DcCleanerNotifier.EXTRA_RESUME_TASK_ID)
+                    },
+                    isDarkTheme = darkTheme,
+                    onDarkThemeChange = { enabled ->
+                        darkTheme = enabled
+                        saveDarkTheme(this, enabled)
                     }
                 )
             }

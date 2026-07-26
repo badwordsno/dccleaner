@@ -24,7 +24,7 @@ class LogManager(private val context: Context) {
     suspend fun addLog(tag: String, message: String) = withContext(Dispatchers.IO) {
         try {
             val timestamp = dateFormat.format(Date())
-            val logEntry = "[$timestamp] [$tag] $message\n"
+            val logEntry = "[$timestamp] [$tag] ${SensitiveLogSanitizer.sanitize(message)}\n"
             
             // 파일 크기 체크 및 로테이션
             if (logFile.exists() && logFile.length() > MAX_LOG_SIZE) {

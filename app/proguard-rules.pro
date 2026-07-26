@@ -34,10 +34,6 @@
 -keep class com.twocaptcha.** { *; }
 -dontwarn com.twocaptcha.**
 
-# Jackson
--keep class com.fasterxml.jackson.** { *; }
--dontwarn com.fasterxml.jackson.**
-
 # Security Crypto (EncryptedSharedPreferences)
 -keep class androidx.security.crypto.** { *; }
 

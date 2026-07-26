@@ -4,12 +4,11 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.AtomicFile
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
 import com.dccleaner.app.model.CollectedPost
 import com.dccleaner.app.model.DeleteTaskProgress
 import com.dccleaner.app.model.DeleteTaskState
 import com.dccleaner.app.model.DeleteQueueCheckpoint
+import com.dccleaner.app.runtime.DeleteTaskStorePort
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
@@ -17,7 +16,7 @@ import java.io.File
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 
-class DeleteTaskStore(context: Context) {
+class DeleteTaskStore(context: Context) : DeleteTaskStorePort {
     companion object {
         private const val PREFS_NAME = "delete_task_progress"
         private const val KEY_TASKS = "tasks"
@@ -26,26 +25,26 @@ class DeleteTaskStore(context: Context) {
 
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val secretPrefs: SharedPreferences? = runCatching {
-        createSecretPreferences(context.applicationContext)
+        encryptedPreferences(context, SECRET_PREFS_NAME)
     }.getOrNull()
     private val queueDirectory = File(context.applicationContext.filesDir, "delete_task_queues")
     private val gson = Gson()
     private val taskListType = object : TypeToken<List<DeleteTaskProgress>>() {}.type
 
     @Synchronized
-    fun getAll(): List<DeleteTaskProgress> = readTasks().sortedByDescending { it.updatedAt }
+    override fun getAll(): List<DeleteTaskProgress> = readTasks().sortedByDescending { it.updatedAt }
 
     @Synchronized
-    fun getForLogin(loginId: String): List<DeleteTaskProgress> =
+    override fun getForLogin(loginId: String): List<DeleteTaskProgress> =
         readTasks()
             .filter { it.loginId == loginId }
             .sortedByDescending { it.updatedAt }
 
     @Synchronized
-    fun get(taskId: String): DeleteTaskProgress? = readTasks().firstOrNull { it.id == taskId }
+    override fun get(taskId: String): DeleteTaskProgress? = readTasks().firstOrNull { it.id == taskId }
 
     @Synchronized
-    fun save(task: DeleteTaskProgress): Boolean {
+    override fun save(task: DeleteTaskProgress): Boolean {
         val tasks = readTasks().toMutableList()
         val updated = task.copy(updatedAt = System.currentTimeMillis())
         val index = tasks.indexOfFirst { it.id == task.id }
@@ -56,11 +55,11 @@ class DeleteTaskStore(context: Context) {
     }
 
     @Synchronized
-    fun updateState(
+    override fun updateState(
         taskId: String,
         state: DeleteTaskState,
         message: String,
-        captchaRequired: Boolean = false
+        captchaRequired: Boolean
     ): DeleteTaskProgress? {
         val tasks = readTasks().toMutableList()
         val index = tasks.indexOfFirst { it.id == taskId }
@@ -76,7 +75,7 @@ class DeleteTaskStore(context: Context) {
     }
 
     @Synchronized
-    fun remove(taskId: String): Boolean {
+    override fun remove(taskId: String): Boolean {
         val tasks = readTasks().filterNot { it.id == taskId }
         val progressRemoved = writeTasks(tasks)
         if (progressRemoved) {
@@ -88,7 +87,7 @@ class DeleteTaskStore(context: Context) {
     }
 
     @Synchronized
-    fun saveQueue(taskId: String, posts: List<CollectedPost>): Boolean = runCatching {
+    override fun saveQueue(taskId: String, posts: List<CollectedPost>): Boolean = runCatching {
         if (!queueDirectory.exists() && !queueDirectory.mkdirs()) return@runCatching false
         val atomicFile = AtomicFile(queueFile(taskId))
         val output = atomicFile.startWrite()
@@ -105,7 +104,7 @@ class DeleteTaskStore(context: Context) {
     }.getOrDefault(false)
 
     @Synchronized
-    fun loadRemainingQueue(taskId: String, cursor: Int): List<CollectedPost>? = runCatching {
+    override fun loadRemainingQueue(taskId: String, cursor: Int): List<CollectedPost>? = runCatching {
         val file = queueFile(taskId)
         val atomicFile = AtomicFile(file)
         atomicFile.openRead().use { input ->
@@ -128,31 +127,31 @@ class DeleteTaskStore(context: Context) {
     }.getOrNull()
 
     @Synchronized
-    fun hasQueue(taskId: String): Boolean = runCatching {
+    override fun hasQueue(taskId: String): Boolean = runCatching {
         AtomicFile(queueFile(taskId)).openRead().use { }
         true
     }.getOrDefault(false)
 
     @Synchronized
-    fun deleteQueue(taskId: String): Boolean {
+    override fun deleteQueue(taskId: String): Boolean {
         val file = queueFile(taskId)
         AtomicFile(file).delete()
         return !file.exists()
     }
 
     @Synchronized
-    fun saveCollectedPage(taskId: String, page: Int, posts: List<CollectedPost>): Boolean =
+    override fun saveCollectedPage(taskId: String, page: Int, posts: List<CollectedPost>): Boolean =
         writePostList(AtomicFile(collectedPageFile(taskId, page)), posts)
 
     @Synchronized
-    fun findNextMissingCollectedPage(taskId: String, totalPages: Int): Int {
+    override fun findNextMissingCollectedPage(taskId: String, totalPages: Int): Int {
         return DeleteQueueCheckpoint.findNextMissingPage(totalPages) { page ->
             hasCollectedPage(taskId, page)
         }
     }
 
     @Synchronized
-    fun loadCollectedPages(taskId: String, totalPages: Int): List<CollectedPost>? = runCatching {
+    override fun loadCollectedPages(taskId: String, totalPages: Int): List<CollectedPost>? = runCatching {
         val posts = mutableListOf<CollectedPost>()
         for (page in DeleteQueueCheckpoint.pagesInQueueOrder(totalPages)) {
             val pagePosts = readPostList(collectedPageFile(taskId, page)) ?: return@runCatching null
@@ -162,7 +161,7 @@ class DeleteTaskStore(context: Context) {
     }.getOrNull()
 
     @Synchronized
-    fun deleteCollectedPages(taskId: String): Boolean {
+    override fun deleteCollectedPages(taskId: String): Boolean {
         val directory = collectedPagesDirectory(taskId)
         directory.listFiles()?.forEach { it.delete() }
         return !directory.exists() || directory.delete()
@@ -228,15 +227,4 @@ class DeleteTaskStore(context: Context) {
         true
     }.getOrDefault(false)
 
-    @Suppress("DEPRECATION")
-    private fun createSecretPreferences(context: Context): SharedPreferences {
-        val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-        return EncryptedSharedPreferences.create(
-            SECRET_PREFS_NAME,
-            masterKeyAlias,
-            context,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
 }

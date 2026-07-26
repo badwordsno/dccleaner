@@ -1,0 +1,63 @@
+package com.dccleaner.app.ui.dialog
+
+import com.dccleaner.app.model.UiColors
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+
+@Composable
+fun StopDaewangconDialog(
+    uiColors: UiColors,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(Icons.Default.Warning, contentDescription = "경고", tint = uiColors.warning)
+        },
+        title = {
+            Text(
+                "대왕콘 작업 정지",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text("정말 대왕콘 작업을 정지할까요?", style = MaterialTheme.typography.bodyMedium)
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = uiColors.warning),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("정지", color = Color.White)
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("취소")
+            }
+        },
+        containerColor = uiColors.card,
+        shape = RoundedCornerShape(16.dp)
+    )
+}

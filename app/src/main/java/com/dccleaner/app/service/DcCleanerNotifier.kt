@@ -117,6 +117,9 @@ class DcCleanerNotifier(
         ongoing = true
     )
 
+    fun createGuestbookNotification(contentText: String = "방명록 전송 준비 중..."): Notification =
+        createServiceNotification("DC 클리너", contentText, ongoing = true)
+
     private fun createServiceNotification(
         title: String,
         contentText: String,
@@ -159,6 +162,15 @@ class DcCleanerNotifier(
         )
     }
 
+    fun updateGuestbookNotification(contentText: String) {
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(
+            DcCleanerService.NOTIFICATION_ID,
+            createGuestbookNotification(contentText)
+        )
+    }
+
     fun showCompletedNotification(contentText: String) {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -189,6 +201,19 @@ class DcCleanerNotifier(
             createServiceNotification(
                 title = "DC 클리너",
                 contentText = "대왕콘 얻기 실패",
+                ongoing = false
+            )
+        )
+    }
+
+    fun showGuestbookCompletedNotification(successCount: Int, failCount: Int) {
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(
+            DcCleanerService.NOTIFICATION_ID,
+            createServiceNotification(
+                title = "DC 클리너",
+                contentText = "방명록 전송 완료: 성공 ${successCount}명, 실패 ${failCount}명",
                 ongoing = false
             )
         )

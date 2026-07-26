@@ -1,4 +1,13 @@
-# 방명록 전송 기능
+---
+layout: default
+title: "방명록 전송 기능 사용법"
+description: "디시클리너에서 여러 사용자에게 디시인사이드 방명록을 전송하는 방법과 식별코드 입력 방법을 안내합니다."
+permalink: /guestbook.html
+---
+
+# 디시클리너 방명록 전송 기능
+
+➡️ [디시클리너 소개와 최신 버전 다운로드](./)
 
 방명록 전송 기능은 여러 명에게 방명록을 한 번에 전송할 수 있는 기능입니다.
 
@@ -16,22 +25,20 @@
 
 > **📌 참고**
 >
-> Android에서만 사용할 수 있습니다.
+> Android, Windows, macOS를 지원합니다.
 >
 > iOS용 앱은 제공되지 않습니다.
->
-> iPhone 사용자는 PC에서 **BlueStacks**, **LDPlayer** 등의 안드로이드 에뮬레이터를 통해 사용할 수 있습니다.
 
-GitHub Releases에서 최신 APK를 다운로드하여 설치하면 됩니다.
+GitHub Releases에서 최신 버전을 다운로드하면 됩니다.
 
-➡️ [최신 버전 다운로드](https://github.com/dccleaner3/dccleaner/releases)
+➡️ [디시클리너 최신 버전 다운로드](https://github.com/dccleaner3/dccleaner/releases/latest)
 
 ---
 
 # 2. 로그인
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/32f75886-4e32-44cd-bf7b-2b63b022a2b4" alt="로그인 화면" width="360">
+  <img src="https://github.com/user-attachments/assets/32f75886-4e32-44cd-bf7b-2b63b022a2b4" alt="디시클리너 로그인 화면" width="360">
 </p>
 
 아이디와 비밀번호를 입력한 뒤 로그인 버튼을 눌러 주세요.
@@ -47,7 +54,7 @@ GitHub Releases에서 최신 APK를 다운로드하여 설치하면 됩니다.
 # 3. 전송 유저 리스트 설정
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/a27d3229-7d72-477b-90f5-087d50cf8a5e" alt="유저 리스트 설정 화면" width="360">
+  <img src="https://github.com/user-attachments/assets/a27d3229-7d72-477b-90f5-087d50cf8a5e" alt="디시클리너 방명록 전송 유저 리스트 설정 화면" width="360">
 </p>
 
 위와 같이 입력하면 됩니다.
@@ -60,7 +67,7 @@ GitHub Releases에서 최신 APK를 다운로드하여 설치하면 됩니다.
 ---
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/ef16bb11-45cc-442e-98cf-aa33cbddf9ac" alt="식별코드 검색 화면" width="360">
+  <img src="https://github.com/user-attachments/assets/ef16bb11-45cc-442e-98cf-aa33cbddf9ac" alt="디시인사이드 고정닉 식별코드 검색 화면" width="360">
 </p>
 
 이처럼 고정닉 식별코드 목록을 쉽게 확인할 수 있습니다.
@@ -72,3 +79,5 @@ GitHub Releases에서 최신 APK를 다운로드하여 설치하면 됩니다.
 ## ⚡ 성능
 
 테스트 결과 약 **3,000명**의 식별코드를 등록하고 전송했을 때도 **5초 이내**에 처리되었습니다.
+
+[디시클리너 홈페이지로 돌아가기](./)

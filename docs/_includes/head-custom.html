@@ -1,0 +1,30 @@
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0969da">
+
+{% if page.url == "/" %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "디시클리너",
+  "alternateName": "디시 클리너",
+  "description": "디시인사이드 갤로그의 게시글과 댓글을 정리하는 Android, Windows, macOS용 무료 오픈소스 프로그램",
+  "url": "{{ '/' | absolute_url }}",
+  "downloadUrl": "https://github.com/dccleaner3/dccleaner/releases/latest",
+  "sameAs": "https://github.com/dccleaner3/dccleaner",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": [
+    "Android",
+    "Windows",
+    "macOS"
+  ],
+  "isAccessibleForFree": true,
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "KRW"
+  },
+  "license": "https://www.gnu.org/licenses/agpl-3.0.html"
+}
+</script>
+{% endif %}

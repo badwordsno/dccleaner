@@ -9,12 +9,14 @@ import android.os.IBinder
 import com.dccleaner.app.network.Cleaner
 import com.dccleaner.app.model.DeleteTaskProgress
 import com.dccleaner.app.model.DeleteTaskStartValidator
+import com.dccleaner.app.runtime.GuestbookExecutionProgress
 import com.dccleaner.app.util.LogManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
@@ -25,9 +27,12 @@ class ServiceManager(context: Context) {
     private var isServiceBound = false
     private var isServiceBinding = false
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var serviceObserverJob: Job? = null
+    private var isUiObservationEnabled = false
     private var pendingDeletion: PendingDeletion? = null
     private var pendingResume: Pair<Cleaner, DeleteTaskProgress>? = null
     private var pendingDaewangcon: PendingDaewangcon? = null
+    private var pendingGuestbook: PendingGuestbook? = null
     val logManager = LogManager(context)
 
     private val _isServiceConnected = MutableStateFlow(false)
@@ -104,20 +109,41 @@ class ServiceManager(context: Context) {
     private val _daewangconCommentCount = MutableStateFlow(0)
     val daewangconCommentCount: StateFlow<Int> = _daewangconCommentCount.asStateFlow()
 
+    private val _isGuestbookSending = MutableStateFlow(false)
+    val isGuestbookSending: StateFlow<Boolean> = _isGuestbookSending.asStateFlow()
+
+    private val _guestbookProgressDone = MutableStateFlow(0)
+    val guestbookProgressDone: StateFlow<Int> = _guestbookProgressDone.asStateFlow()
+
+    private val _guestbookProgressTotal = MutableStateFlow(0)
+    val guestbookProgressTotal: StateFlow<Int> = _guestbookProgressTotal.asStateFlow()
+
+    private val _guestbookSuccessCount = MutableStateFlow(0)
+    val guestbookSuccessCount: StateFlow<Int> = _guestbookSuccessCount.asStateFlow()
+
+    private val _guestbookFailCount = MutableStateFlow(0)
+    val guestbookFailCount: StateFlow<Int> = _guestbookFailCount.asStateFlow()
+    private val _guestbookProgress = MutableStateFlow(emptyGuestbookProgress())
+    val guestbookProgress: StateFlow<GuestbookExecutionProgress> = _guestbookProgress.asStateFlow()
+
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as DcCleanerService.LocalBinder
-            dcCleanerService = binder.getService()
+            val connectedService = binder.getService()
+            dcCleanerService = connectedService
             isServiceBinding = false
             isServiceBound = true
-            syncServiceState(binder.getService())
-            startObservingServiceState()
+            if (isUiObservationEnabled) {
+                syncServiceState(connectedService)
+                startObservingServiceState(connectedService)
+            }
             _isServiceConnected.value = true
 
 
             executePendingDeletion()
             executePendingDaewangcon()
+            executePendingGuestbook()
             pendingResume?.let { (cleaner, task) ->
                 resumeDeletionInternal(cleaner, task)
                 pendingResume = null
@@ -126,6 +152,7 @@ class ServiceManager(context: Context) {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             val wasDaewangconActive = _isDaewangconRunning.value || pendingDaewangcon != null
+            stopObservingServiceState()
             dcCleanerService = null
             isServiceBinding = false
             isServiceBound = false
@@ -134,6 +161,8 @@ class ServiceManager(context: Context) {
             _isDaewangconRunning.value = false
             _isDaewangconCompleted.value = false
             pendingDaewangcon = null
+            pendingGuestbook = null
+            _isGuestbookSending.value = false
             if (wasDaewangconActive) {
                 _daewangconErrorMessage.value = "서비스 연결이 끊겨 대왕콘 작업이 중단되었습니다."
             }
@@ -163,38 +192,69 @@ class ServiceManager(context: Context) {
         _daewangconLog.value = service.daewangconLog.value
         _daewangconPostCount.value = service.daewangconPostCount.value
         _daewangconCommentCount.value = service.daewangconCommentCount.value
+        updateGuestbookProgress(service.guestbookProgress.value)
+        _isGuestbookSending.value = service.isGuestbookSending.value
     }
 
-    private fun startObservingServiceState() {
-        dcCleanerService?.let { service ->
-            scope.launch { service.isDeleting.collect { _isDeleting.value = it } }
-            scope.launch { service.progress.collect { _progress.value = it } }
-            scope.launch { service.currentGallery.collect { _currentGallery.value = it } }
-            scope.launch { service.currentGalleryEstimatedTimeLeft.collect { _currentGalleryEstimatedTimeLeft.value = it } }
-            scope.launch { service.nextCaptchaEstimatedTimeLeft.collect { _nextCaptchaEstimatedTimeLeft.value = it } }
-            scope.launch { service.isTwoCaptchaConfigured.collect { _isTwoCaptchaConfigured.value = it } }
-            scope.launch { service.currentTaskLoginId.collect { _currentTaskLoginId.value = it } }
-            scope.launch { service.currentDeleteType.collect { _currentDeleteType.value = it } }
-            scope.launch { service.deletedCount.collect { _deletedCount.value = it } }
-            scope.launch { service.totalCount.collect { _totalCount.value = it } }
-            scope.launch { service.deleteLog.collect { _deleteLog.value = it } }
-            scope.launch { service.isCompleted.collect { _isCompleted.value = it } }
-            scope.launch { service.errorMessage.collect { _errorMessage.value = it } }
-            scope.launch { service.showCaptchaDialog.collect { _showCaptchaDialog.value = it } }
-            scope.launch { service.captchaFlag.collect { _captchaFlag.value = it } }
+    private fun startObservingServiceState(service: DcCleanerService) {
+        serviceObserverJob = scope.replaceConnectionObserverJob(serviceObserverJob) {
+            launch { service.isDeleting.collect { _isDeleting.value = it } }
+            launch { service.progress.collect { _progress.value = it } }
+            launch { service.currentGallery.collect { _currentGallery.value = it } }
+            launch { service.currentGalleryEstimatedTimeLeft.collect { _currentGalleryEstimatedTimeLeft.value = it } }
+            launch { service.nextCaptchaEstimatedTimeLeft.collect { _nextCaptchaEstimatedTimeLeft.value = it } }
+            launch { service.isTwoCaptchaConfigured.collect { _isTwoCaptchaConfigured.value = it } }
+            launch { service.currentTaskLoginId.collect { _currentTaskLoginId.value = it } }
+            launch { service.currentDeleteType.collect { _currentDeleteType.value = it } }
+            launch { service.deletedCount.collect { _deletedCount.value = it } }
+            launch { service.totalCount.collect { _totalCount.value = it } }
+            launch { service.deleteLog.collect { _deleteLog.value = it } }
+            launch { service.isCompleted.collect { _isCompleted.value = it } }
+            launch { service.errorMessage.collect { _errorMessage.value = it } }
+            launch { service.showCaptchaDialog.collect { _showCaptchaDialog.value = it } }
+            launch { service.captchaFlag.collect { _captchaFlag.value = it } }
 
             // 대왕콘 관련 StateFlow 연결
-            scope.launch { service.isDaewangconRunning.collect { _isDaewangconRunning.value = it } }
-            scope.launch { service.isDaewangconCompleted.collect { _isDaewangconCompleted.value = it } }
-            scope.launch { service.daewangconErrorMessage.collect { _daewangconErrorMessage.value = it } }
-            scope.launch { service.daewangconProgress.collect { _daewangconProgress.value = it } }
-            scope.launch { service.daewangconLog.collect { _daewangconLog.value = it } }
-            scope.launch { service.daewangconPostCount.collect { _daewangconPostCount.value = it } }
-            scope.launch {
+            launch { service.isDaewangconRunning.collect { _isDaewangconRunning.value = it } }
+            launch { service.isDaewangconCompleted.collect { _isDaewangconCompleted.value = it } }
+            launch { service.daewangconErrorMessage.collect { _daewangconErrorMessage.value = it } }
+            launch { service.daewangconProgress.collect { _daewangconProgress.value = it } }
+            launch { service.daewangconLog.collect { _daewangconLog.value = it } }
+            launch { service.daewangconPostCount.collect { _daewangconPostCount.value = it } }
+            launch {
                 service.daewangconCommentCount.collect {
                     _daewangconCommentCount.value = it
                 }
             }
+            launch { service.isGuestbookSending.collect { _isGuestbookSending.value = it } }
+            launch { service.guestbookProgress.collect(::updateGuestbookProgress) }
+        }
+    }
+
+    private fun updateGuestbookProgress(progress: GuestbookExecutionProgress) {
+        _guestbookProgress.value = progress
+        _guestbookProgressDone.value = progress.done
+        _guestbookProgressTotal.value = progress.total
+        _guestbookSuccessCount.value = progress.successCount
+        _guestbookFailCount.value = progress.failCount
+    }
+
+    private fun stopObservingServiceState() {
+        serviceObserverJob?.cancel()
+        serviceObserverJob = null
+    }
+
+    fun setUiObservationEnabled(enabled: Boolean) {
+        if (isUiObservationEnabled == enabled) return
+        isUiObservationEnabled = enabled
+        if (!enabled) {
+            stopObservingServiceState()
+            return
+        }
+
+        dcCleanerService?.let { service ->
+            syncServiceState(service)
+            startObservingServiceState(service)
         }
     }
 
@@ -208,12 +268,15 @@ class ServiceManager(context: Context) {
                 pending.twoCaptchaApiKey,
                 pending.recommendFilterEnabled,
                 pending.commentFilterEnabled,
+                pending.postContentFilterEnabled,
                 pending.commentContentFilterEnabled,
                 pending.dateFilterEnabled,
+                pending.deleteNewestFirst,
                 pending.minRecommendToKeep,
                 pending.minCommentToKeep,
                 pending.myPostFilterEnabled,
                 pending.dcconOnlyFilterEnabled,
+                pending.postContentRegex,
                 pending.commentRegexFilter,
                 pending.minPostAgeDaysToDelete,
                 pending.recordGuestbookLog
@@ -235,9 +298,12 @@ class ServiceManager(context: Context) {
         if (isServiceBound || isServiceBinding) {
             runCatching { context.unbindService(serviceConnection) }
         }
+        stopObservingServiceState()
+        isUiObservationEnabled = false
         isServiceBound = false
         isServiceBinding = false
         pendingDaewangcon = null
+        pendingGuestbook = null
         _isServiceConnected.value = false
         scope.cancel()
     }
@@ -250,12 +316,15 @@ class ServiceManager(context: Context) {
         twoCaptchaApiKey: String = "",
         recommendFilterEnabled: Boolean = false,
         commentFilterEnabled: Boolean = false,
+        postContentFilterEnabled: Boolean = false,
         commentContentFilterEnabled: Boolean = false,
         dateFilterEnabled: Boolean = false,
+        deleteNewestFirst: Boolean = false,
         minRecommendToKeep: Int = -1,
         minCommentToKeep: Int = -1,
         myPostFilterEnabled: Boolean = false,
         dcconOnlyFilterEnabled: Boolean = false,
+        postContentRegex: String = "",
         commentRegexFilter: String = "",
         minPostAgeDaysToDelete: Int = -1,
         recordGuestbookLog: Boolean = true
@@ -277,12 +346,15 @@ class ServiceManager(context: Context) {
                 twoCaptchaApiKey,
                 recommendFilterEnabled,
                 commentFilterEnabled,
+                postContentFilterEnabled,
                 commentContentFilterEnabled,
                 dateFilterEnabled,
+                deleteNewestFirst,
                 minRecommendToKeep,
                 minCommentToKeep,
                 myPostFilterEnabled,
                 dcconOnlyFilterEnabled,
+                postContentRegex,
                 commentRegexFilter,
                 minPostAgeDaysToDelete,
                 recordGuestbookLog
@@ -296,12 +368,15 @@ class ServiceManager(context: Context) {
                 twoCaptchaApiKey,
                 recommendFilterEnabled,
                 commentFilterEnabled,
+                postContentFilterEnabled,
                 commentContentFilterEnabled,
                 dateFilterEnabled,
+                deleteNewestFirst,
                 minRecommendToKeep,
                 minCommentToKeep,
                 myPostFilterEnabled,
                 dcconOnlyFilterEnabled,
+                postContentRegex,
                 commentRegexFilter,
                 minPostAgeDaysToDelete,
                 recordGuestbookLog
@@ -315,7 +390,6 @@ class ServiceManager(context: Context) {
             action = DcCleanerService.ACTION_STOP_DELETE
         }
         context.startService(stopIntent)
-        resetProgress()
     }
 
     fun resumeDeletion(cleaner: Cleaner, task: DeleteTaskProgress): Boolean {
@@ -413,6 +487,7 @@ class ServiceManager(context: Context) {
         _isDaewangconRunning.value = false
         _isDaewangconCompleted.value = false
         _daewangconErrorMessage.value = null
+        _daewangconProgress.value = 0f
         val service = dcCleanerService
         if (service != null) {
             service.clearPreparedDaewangcon()
@@ -422,6 +497,29 @@ class ServiceManager(context: Context) {
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(DcCleanerService.NOTIFICATION_ID)
         }
+    }
+
+    fun startGuestbook(cleaner: Cleaner, userIds: List<String>, message: String): Boolean {
+        if (userIds.isEmpty()) return false
+        if (_isGuestbookSending.value) return false
+        _isGuestbookSending.value = true
+        updateGuestbookProgress(
+            GuestbookExecutionProgress(
+                done = 0,
+                total = userIds.size,
+                successCount = 0,
+                failCount = 0
+            )
+        )
+        pendingGuestbook = PendingGuestbook(cleaner, userIds, message)
+        if (dcCleanerService != null) {
+            executePendingGuestbook()
+        } else if (!bindService()) {
+            pendingGuestbook = null
+            _isGuestbookSending.value = false
+            return false
+        }
+        return true
     }
 
 
@@ -457,6 +555,19 @@ class ServiceManager(context: Context) {
         }
     }
 
+    private fun executePendingGuestbook() {
+        val pending = pendingGuestbook ?: return
+        val service = dcCleanerService ?: return
+        try {
+            service.prepareGuestbook(pending.cleaner, pending.userIds, pending.message)
+            startForegroundService(DcCleanerService.ACTION_START_GUESTBOOK)
+            pendingGuestbook = null
+        } catch (e: RuntimeException) {
+            pendingGuestbook = null
+            _isGuestbookSending.value = false
+        }
+    }
+
     private fun startDeletionInternal(
         cleaner: Cleaner,
         selectedGalleries: List<String>,
@@ -465,12 +576,15 @@ class ServiceManager(context: Context) {
         twoCaptchaApiKey: String = "",
         recommendFilterEnabled: Boolean = false,
         commentFilterEnabled: Boolean = false,
+        postContentFilterEnabled: Boolean = false,
         commentContentFilterEnabled: Boolean = false,
         dateFilterEnabled: Boolean = false,
+        deleteNewestFirst: Boolean = false,
         minRecommendToKeep: Int = -1,
         minCommentToKeep: Int = -1,
         myPostFilterEnabled: Boolean = false,
         dcconOnlyFilterEnabled: Boolean = false,
+        postContentRegex: String = "",
         commentRegexFilter: String = "",
         minPostAgeDaysToDelete: Int = -1,
         recordGuestbookLog: Boolean = true
@@ -486,12 +600,15 @@ class ServiceManager(context: Context) {
                 twoCaptchaApiKey,
                 recommendFilterEnabled,
                 commentFilterEnabled,
+                postContentFilterEnabled,
                 commentContentFilterEnabled,
                 dateFilterEnabled,
+                deleteNewestFirst,
                 minRecommendToKeep,
                 minCommentToKeep,
                 myPostFilterEnabled,
                 dcconOnlyFilterEnabled,
+                postContentRegex,
                 commentRegexFilter,
                 minPostAgeDaysToDelete,
                 recordGuestbookLog
@@ -520,6 +637,14 @@ class ServiceManager(context: Context) {
     }
 }
 
+internal fun CoroutineScope.replaceConnectionObserverJob(
+    previousJob: Job?,
+    observe: suspend CoroutineScope.() -> Unit
+): Job {
+    previousJob?.cancel()
+    return launch(block = observe)
+}
+
 
 private data class PendingDeletion(
     val cleaner: Cleaner,
@@ -529,12 +654,15 @@ private data class PendingDeletion(
     val twoCaptchaApiKey: String = "",
     val recommendFilterEnabled: Boolean = false,
     val commentFilterEnabled: Boolean = false,
+    val postContentFilterEnabled: Boolean = false,
     val commentContentFilterEnabled: Boolean = false,
     val dateFilterEnabled: Boolean = false,
+    val deleteNewestFirst: Boolean = false,
     val minRecommendToKeep: Int = -1,
     val minCommentToKeep: Int = -1,
     val myPostFilterEnabled: Boolean = false,
     val dcconOnlyFilterEnabled: Boolean = false,
+    val postContentRegex: String = "",
     val commentRegexFilter: String = "",
     val minPostAgeDaysToDelete: Int = -1,
     val recordGuestbookLog: Boolean = true
@@ -547,4 +675,17 @@ private data class PendingDaewangcon(
     val postSubject: String,
     val postContent: String,
     val commentContent: String
+)
+
+private data class PendingGuestbook(
+    val cleaner: Cleaner,
+    val userIds: List<String>,
+    val message: String
+)
+
+private fun emptyGuestbookProgress() = GuestbookExecutionProgress(
+    done = 0,
+    total = 0,
+    successCount = 0,
+    failCount = 0
 )
