@@ -1,0 +1,18 @@
+{
+  "baseUnitPrice": 0.1,
+  "minimumPrice": 1000,
+  "deletionsPerSecond": 1.0,
+  "completedDeletionCount": 600000,
+  "completedDeletionCountAsOf": "2026-08-29",
+  "kakaoOpenChatUrl": "https://open.kakao.com/o/sEEVqAJi",
+  "tiers": [
+    {
+      "minCount": 1,
+      "maxCount": 10000,
+      "unitPriceMultiplier": 1.0,
+      "fixedPrice": null
+    },
+    { "minCount": 10001, "maxCount": 50000, "unitPriceMultiplier": 0.6 },
+    { "minCount": 50001, "maxCount": null, "unitPriceMultiplier": 0.2 }
+  ]
+}
